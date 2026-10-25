@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: homecloud-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-homecloud}
+      POSTGRES_USER: ${POSTGRES_USER:-homecloud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_to_secure_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - homecloud_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  homecloud_postgres_data:

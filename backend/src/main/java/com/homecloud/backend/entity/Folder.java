@@ -59,6 +59,13 @@ public class Folder {
     public void setName(String name) { this.name = name; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+    @JsonIgnore
     public User getOwner() { return owner; }
+
+    @JsonIgnore
     public Folder getParent() { return parent; }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("parentId")
+    public Long getParentId() { return parent == null ? null : parent.getId(); }
 }
+

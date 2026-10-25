@@ -83,6 +83,7 @@ public class File {
     public String getContentType() { return contentType; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+    @JsonIgnore
     public User getOwner() { return owner; }
     @JsonIgnore
     public Folder getFolder() { return folder; }

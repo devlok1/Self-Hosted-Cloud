@@ -19,7 +19,8 @@ $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Where-Object {
         $_.IPAddress -notlike "127.*" -and
         $_.IPAddress -notlike "169.254.*" -and
-        $_.PrefixOrigin -ne "WellKnown"
+        $_.PrefixOrigin -ne "WellKnown" -and
+        $_.InterfaceAlias -notmatch "VMware|Virtual|vEthernet|Loopback"
     } |
     Select-Object -First 1 -ExpandProperty IPAddress
 

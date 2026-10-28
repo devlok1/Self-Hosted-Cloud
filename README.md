@@ -1,29 +1,104 @@
-# HomeCloud Backend — MVP File Management
+# HomeCloud — Self-Hosted Cloud Storage
 
-HomeCloud backend using Java 21, Spring Boot 4.1.1, PostgreSQL 17, Spring Data JPA and JWT authentication.
+HomeCloud is a self-hosted personal cloud storage application designed for running on your own hardware (old laptops, desktops, home servers, or private VPS instances) across your Local Area Network (LAN).
 
-## Included MVP features
+- **Backend**: Java 21, Spring Boot 4.1.1, Spring Security (stateless JWT, BCrypt-12), Spring Data JPA, PostgreSQL 17/18.
+- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Lucide icons.
+- **Architecture**: User-isolated storage (`HomeCloudStorage/users/{userId}`), atomic file staging, path traversal prevention, DTO shields concealing filesystem paths.
 
+---
+
+## Quick Start (One-Click Launch)
+
+### 1. Database Setup
+Choose one of the two options:
+- **Option A (Local PostgreSQL service)**: Run the setup script to create the user and database matching your `.env`:
+  ```powershell
+  .\setup-local-db.ps1
+  ```
+- **Option B (Docker PostgreSQL)**:
+  ```powershell
+  docker compose up -d
+  ```
+
+### 2. Start Both Backend & Frontend
+Run the unified startup script:
+```powershell
+.\start-homecloud.ps1
+```
+This opens the services in dedicated terminals and prints your direct access links:
+- **Frontend Web UI**: `http://localhost:3000` (or `http://<YOUR_LAN_IP>:3000`)
+- **Backend API**: `http://localhost:8081` (or `http://<YOUR_LAN_IP>:8081`)
+- **Health Check**: `http://localhost:8081/api/health`
+
+### 3. Stop HomeCloud
+Whenever you want to stop the servers:
+- **Option A (Terminal)**: Press `Ctrl + C` in each running terminal window.
+- **Option B (One-Click Script)**: Run the shutdown script:
+  ```powershell
+  .\stop-homecloud.ps1
+  ```
+
+---
+
+## Automated Test Suites
+
+Both backend and frontend are backed by comprehensive, real automated test suites:
+
+- **Backend Tests (41 tests, 0 failures)**:
+  ```powershell
+  cd backend
+  mvn test
+  ```
+  Tests cover JWT generation/validation, password hashing & authentication, path sanitization, atomic upload staging, safe deletion rollback, breadcrumb resolution, and REST integration endpoints.
+
+- **Frontend Tests (23 tests, 0 failures)**:
+  ```powershell
+  cd frontend
+  npm test
+  ```
+  Tests cover byte formatting, date localization, file type categorization, authentication form state & validations, navigation breadcrumbs, empty state actions, and toolbar filtering.
+
+- **Frontend Production Build**:
+  ```powershell
+  cd frontend
+  npm run build
+  ```
+
+---
+
+## Included Features
+
+### Web Frontend
+- Modern glassmorphism UI with responsive mobile/desktop layouts
+- Sign In & User Registration with validation
+- Breadcrumb navigation for nested folders
+- Grid and List view switcher
+- File and folder upload with real-time progress indicator
+- Direct secure file downloads with correct MIME types and UTF-8 filenames
+- File renaming, moving between folders, and deletion
+- Empty folder deletion safety guard
+- Live search filtering across files
+- Real-time storage meter (bytes used, file and folder count)
+
+### Backend API
 - User registration and login
 - JWT authentication with stateless Spring Security
 - Secure ownership checks for every file/folder operation
-- Upload files to local `HomeCloudStorage`
+- Upload files to user-isolated `HomeCloudStorage/users/{userId}/`
 - List files in the root or a folder
-- Download files
-- Rename files
-- Move files between folders or back to root
-- Delete files
-- Create folders
-- List folders
-- Rename folders
-- Delete empty folders
-- File metadata stored in PostgreSQL
-- Folder metadata stored in PostgreSQL
-- Safe generated storage filenames to avoid collisions
-- Path traversal protection for stored files
+- Download files with RFC 5987 UTF-8 Content-Disposition
+- Rename and move files between folders or back to root
+- Delete files with storage rollback protection
+- Create, rename, and delete folders
+- Folder breadcrumb hierarchy resolution
+- Fast search across user files
+- Storage statistics (`/api/storage/stats`)
+- Safe generated storage filenames and path traversal protection
 - 1 GB multipart upload limit
 - CORS for local React development and private-LAN clients
-- LAN-ready server binding on `0.0.0.0:8080`
+- LAN-ready server binding on `0.0.0.0:8081`
+
 
 ## Project structure
 
@@ -201,57 +276,66 @@ Phone / Laptop / Frontend
 
 `POST /api/auth/register`
 
-Form parameters:
+Accepts either JSON (`application/json`) or form parameters (`application/x-www-form-urlencoded`):
 
+**JSON Body (Recommended):**
+```json
+{
+  "email": "your@email.com",
+  "password": "yourPassword123"
+}
+```
+
+**Form parameters:**
 ```text
 email=your@email.com
-password=yourPassword
+password=yourPassword123
 ```
+
+Returns `UserResponse` (`id`, `email`).
 
 ### Login
 
 `POST /api/auth/login`
 
-Form parameters:
+Accepts either JSON (`application/json`) or form parameters:
 
-```text
-email=your@email.com
-password=yourPassword
+**JSON Body (Recommended):**
+```json
+{
+  "email": "your@email.com",
+  "password": "yourPassword123"
+}
 ```
 
-Copy the `token` from the login response.
+Returns `LoginResponse` containing JWT token, userId, and email.
 
-For every protected request use:
+### Current User Profile
 
-```text
-Authorization: Bearer YOUR_TOKEN_HERE
-```
+`GET /api/auth/me`
 
-Do not include the word `Bearer` twice and do not paste quotes around the token.
+Requires JWT authentication. Returns current user details (`id`, `email`).
+
+---
 
 ## File API
 
-All file endpoints require a valid JWT.
+All file endpoints require a valid JWT header (`Authorization: Bearer <token>`).
+Responses use `FileResponse` DTOs (`id`, `filename`, `size`, `contentType`, `folderId`, `createdAt`, `updatedAt`), concealing internal server storage paths.
 
 ### Upload to root
 
 `POST /api/files/upload`
 
 Body: `multipart/form-data`
-
-```text
-file = <select a file>
-```
+- `file`: `<file bytes>`
 
 ### Upload to a folder
 
 `POST /api/files/upload?folderId=1`
 
 Body: `multipart/form-data`
-
-```text
-file = <select a file>
-```
+- `file`: `<file bytes>`
 
 ### List root files
 
@@ -261,9 +345,30 @@ file = <select a file>
 
 `GET /api/files?folderId=1`
 
+### Search files
+
+`GET /api/files/search?q=report`
+
+Searches filenames belonging to the authenticated user.
+
+### Storage statistics
+
+`GET /api/storage/stats` (or `GET /api/files/stats`)
+
+Returns storage usage and counts:
+```json
+{
+  "usedBytes": 1048576,
+  "fileCount": 12,
+  "folderCount": 3
+}
+```
+
 ### Download
 
 `GET /api/files/{fileId}/download`
+
+Returns file bytes with proper `Content-Type` and `Content-Disposition` attachment headers (RFC 5987 UTF-8 encoded).
 
 ### Rename
 
@@ -280,6 +385,8 @@ file = <select a file>
 ### Delete
 
 `DELETE /api/files/{fileId}`
+
+---
 
 ## Folder API
 
@@ -301,6 +408,12 @@ All folder endpoints require a valid JWT.
 
 `GET /api/folders?parentId=1`
 
+### Get folder details with breadcrumbs
+
+`GET /api/folders/{folderId}`
+
+Returns folder metadata along with ordered breadcrumb navigation path from root.
+
 ### Rename folder
 
 `PUT /api/folders/{folderId}?name=NewName`
@@ -309,25 +422,17 @@ All folder endpoints require a valid JWT.
 
 `DELETE /api/folders/{folderId}`
 
-A folder must be empty before it can be deleted. This prevents accidental deletion of stored files and child folders.
+A folder must be empty (no subfolders, no files) before it can be deleted. This prevents accidental deletion of stored files and child folders.
+
+---
 
 ## Storage model
 
-PostgreSQL stores metadata such as:
+- PostgreSQL stores file and folder metadata (`id`, `filename`, `size`, `contentType`, `owner`, `folder`, `createdAt`, `updatedAt`).
+- Actual file bytes are stored with per-user filesystem isolation under `HomeCloudStorage/users/{userId}/<uuid>_<cleanFilename>`.
+- Internal filesystem paths and physical filenames are never exposed through API responses.
+- Safe staging prevents incomplete or aborted uploads from leaving orphaned files on disk.
 
-- file ID
-- original filename
-- generated stored filename
-- storage path
-- size
-- content type
-- owner
-- folder
-- timestamps
-
-The actual file bytes remain on disk under `HomeCloudStorage`.
-
-The generated storage filename is UUID-based, so the physical filename is independent of the user-visible filename.
 
 ## MVP test order in Postman
 

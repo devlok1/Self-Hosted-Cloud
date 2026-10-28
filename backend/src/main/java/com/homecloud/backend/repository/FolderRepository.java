@@ -17,4 +17,6 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
     boolean existsByNameAndOwner_IdAndParent_Id(String name, Long userId, Long parentId);
 
     boolean existsByNameAndOwner_IdAndParentIsNull(String name, Long userId);
+
+    long countByOwner_Id(Long userId);
 }

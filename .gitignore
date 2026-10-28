@@ -10,6 +10,11 @@ target/
 *.tar.gz
 *.rar
 
+# Frontend artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
 # Allow Maven Wrapper jar if generated
 !.mvn/wrapper/maven-wrapper.jar
 

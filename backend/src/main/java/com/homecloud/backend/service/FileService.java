@@ -1,49 +1,61 @@
 package com.homecloud.backend.service;
 
+import com.homecloud.backend.dto.StorageStatsResponse;
 import com.homecloud.backend.entity.File;
 import com.homecloud.backend.entity.Folder;
 import com.homecloud.backend.entity.User;
+import com.homecloud.backend.exception.BadRequestException;
+import com.homecloud.backend.exception.ResourceNotFoundException;
 import com.homecloud.backend.repository.FileRepository;
+import com.homecloud.backend.repository.FolderRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
 
 @Service
 public class FileService {
 
     private final FileRepository fileRepository;
+    private final FolderRepository folderRepository;
     private final FileStorageService fileStorageService;
     private final FolderService folderService;
 
     public FileService(FileRepository fileRepository,
+                       FolderRepository folderRepository,
                        FileStorageService fileStorageService,
                        FolderService folderService) {
         this.fileRepository = fileRepository;
+        this.folderRepository = folderRepository;
         this.fileStorageService = fileStorageService;
         this.folderService = folderService;
     }
 
-    public File uploadFile(MultipartFile file, User user, Long folderId) throws IOException {
+    public File uploadFile(MultipartFile file, User user, Long folderId) {
         if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("File is empty");
+            throw new BadRequestException("File is empty");
+        }
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User must not be null");
         }
 
         String originalFilename = file.getOriginalFilename();
         if (originalFilename == null || originalFilename.isBlank()) {
-            throw new IllegalArgumentException("Invalid file name");
+            throw new BadRequestException("Invalid file name");
         }
 
         Folder folder = folderId == null ? null : folderService.getFolder(folderId, user.getId());
-        String storedFilename = fileStorageService.storeFile(file);
-        Path path = fileStorageService.getFilePath(storedFilename);
+
+        String sanitizedFilename = fileStorageService.sanitizeFilename(originalFilename);
+        String storedFilename = fileStorageService.storeFile(file, user.getId());
+        Path path = fileStorageService.getFilePath(user.getId(), storedFilename);
 
         try {
             File entity = new File(
-                    java.nio.file.Paths.get(originalFilename).getFileName().toString(),
+                    sanitizedFilename,
                     storedFilename,
                     path.toString(),
                     file.getSize(),
@@ -52,12 +64,13 @@ public class FileService {
                     folder
             );
             return fileRepository.save(entity);
-        } catch (RuntimeException e) {
-            Files.deleteIfExists(path);
+        } catch (Exception e) {
+            fileStorageService.deleteFile(user.getId(), storedFilename);
             throw e;
         }
     }
 
+    @Transactional(readOnly = true)
     public List<File> getUserFiles(Long userId, Long folderId) {
         if (folderId == null) {
             return fileRepository.findByOwner_IdAndFolderIsNullOrderByFilenameAsc(userId);
@@ -66,26 +79,37 @@ public class FileService {
         return fileRepository.findByOwner_IdAndFolder_IdOrderByFilenameAsc(userId, folderId);
     }
 
+    @Transactional(readOnly = true)
     public File getUserFile(Long fileId, Long userId) {
         return fileRepository.findByIdAndOwner_Id(fileId, userId)
-                .orElseThrow(() -> new RuntimeException("File not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
     }
 
+    @Transactional(readOnly = true)
+    public List<File> searchUserFiles(Long userId, String query) {
+        if (query == null || query.isBlank()) {
+            return Collections.emptyList();
+        }
+        return fileRepository.findByOwner_IdAndFilenameContainingIgnoreCaseOrderByFilenameAsc(userId, query.trim());
+    }
+
+    @Transactional(readOnly = true)
+    public StorageStatsResponse getStorageStats(Long userId) {
+        long usedBytes = fileRepository.sumSizeByOwner_Id(userId);
+        long fileCount = fileRepository.countByOwner_Id(userId);
+        long folderCount = folderRepository.countByOwner_Id(userId);
+        return new StorageStatsResponse(usedBytes, fileCount, folderCount);
+    }
+
+    @Transactional
     public File renameFile(Long fileId, Long userId, String newFilename) {
-        if (newFilename == null || newFilename.isBlank()) {
-            throw new IllegalArgumentException("File name cannot be empty");
-        }
-
-        String cleanName = java.nio.file.Paths.get(newFilename.trim()).getFileName().toString();
-        if (cleanName.isBlank() || cleanName.equals(".") || cleanName.equals("..")) {
-            throw new IllegalArgumentException("Invalid file name");
-        }
-
+        String cleanName = fileStorageService.sanitizeFilename(newFilename);
         File file = getUserFile(fileId, userId);
         file.setFilename(cleanName);
         return fileRepository.save(file);
     }
 
+    @Transactional
     public File moveFile(Long fileId, Long userId, Long folderId) {
         File file = getUserFile(fileId, userId);
         Folder folder = folderId == null ? null : folderService.getFolder(folderId, userId);
@@ -93,9 +117,10 @@ public class FileService {
         return fileRepository.save(file);
     }
 
-    public void deleteFile(Long fileId, Long userId) throws IOException {
+    @Transactional
+    public void deleteFile(Long fileId, Long userId) {
         File file = getUserFile(fileId, userId);
-        fileStorageService.deleteFile(file.getStoredFilename());
+        fileStorageService.deleteFile(userId, file.getStoredFilename());
         fileRepository.delete(file);
     }
 }

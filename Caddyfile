@@ -22,10 +22,10 @@
     # Reverse proxy API requests to the Spring Boot backend container
     handle /api/* {
         reverse_proxy backend:8080 {
-            header_up Host {upstream_hostport}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
+            header_up Host { upstream_hostport }
+            header_up X-Real-IP { remote_host }
+            header_up X-Forwarded-For { remote_host }
+            header_up X-Forwarded-Proto { scheme }
 
             # Buffer streaming optimizations for high throughput
             transport http {
@@ -38,7 +38,7 @@
     # Serve React SPA static files from /srv
     handle {
         root * /srv
-        try_files {path} /index.html
+        try_files { path } /index.html
         file_server
     }
 }

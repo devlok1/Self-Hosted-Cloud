@@ -2,6 +2,7 @@ package com.homecloud.backend.security;
 
 import com.homecloud.backend.repository.UserRepository;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -26,9 +27,14 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtService jwtService;
+    private final List<String> allowedOriginPatterns;
 
-    public SecurityConfig(JwtService jwtService) {
+    public SecurityConfig(
+            JwtService jwtService,
+            @Value("${homecloud.security.cors.allowed-origin-patterns:http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*,http://192.168.*,http://192.168.*:*,http://10.*,http://10.*:*,http://172.*,http://172.*:*,http://100.*,http://100.*:*,https://100.*,https://100.*:*,http://*.ts.net,http://*.ts.net:*,https://*.ts.net,https://*.ts.net:*}")
+            List<String> allowedOriginPatterns) {
         this.jwtService = jwtService;
+        this.allowedOriginPatterns = allowedOriginPatterns;
     }
 
     @Bean
@@ -98,14 +104,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // Allow local development and clients served from private LAN subnets
-        config.setAllowedOriginPatterns(List.of(
-                "http://localhost:*",
-                "http://127.0.0.1:*",
-                "http://192.168.*:*",
-                "http://10.*:*",
-                "http://172.*:*"
-        ));
+        config.setAllowedOriginPatterns(allowedOriginPatterns);
         config.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
         ));

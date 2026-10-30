@@ -137,14 +137,16 @@ class FileServiceTest {
 
         fileService.deleteFile(2L, 1L);
 
+        verify(fileRepository).save(file);
         verify(fileStorageService).deleteFile(1L, "uuid_stored");
         verify(fileRepository).delete(file);
+        assertEquals(com.homecloud.backend.entity.FileStatus.PENDING_DELETION, file.getStatus());
     }
 
     @Test
     @DisplayName("Search user files by query")
     void searchUserFiles() {
-        when(fileRepository.findByOwner_IdAndFilenameContainingIgnoreCaseOrderByFilenameAsc(1L, "report"))
+        when(fileRepository.findByOwner_IdAndFilenameContainingIgnoreCaseAndStatusOrderByFilenameAsc(1L, "report", com.homecloud.backend.entity.FileStatus.ACTIVE))
                 .thenReturn(List.of(new File("report2026.pdf", "u", "p", 50L, "application/pdf", user)));
 
         List<File> results = fileService.searchUserFiles(1L, "report");
@@ -155,8 +157,8 @@ class FileServiceTest {
     @Test
     @DisplayName("Get storage stats computes bytes and counts")
     void getStorageStats() {
-        when(fileRepository.sumSizeByOwner_Id(1L)).thenReturn(5242880L);
-        when(fileRepository.countByOwner_Id(1L)).thenReturn(15L);
+        when(fileRepository.sumSizeByOwner_IdAndStatus(1L, com.homecloud.backend.entity.FileStatus.ACTIVE)).thenReturn(5242880L);
+        when(fileRepository.countByOwner_IdAndStatus(1L, com.homecloud.backend.entity.FileStatus.ACTIVE)).thenReturn(15L);
         when(folderRepository.countByOwner_Id(1L)).thenReturn(4L);
 
         StorageStatsResponse stats = fileService.getStorageStats(1L);

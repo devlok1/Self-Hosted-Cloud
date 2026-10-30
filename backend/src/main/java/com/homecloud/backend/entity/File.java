@@ -44,6 +44,10 @@ public class File {
     @JsonIgnore
     private Folder folder;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private FileStatus status = FileStatus.ACTIVE;
+
     public File() {}
 
     public File(String filename, String storedFilename, String storagePath,
@@ -91,4 +95,7 @@ public class File {
     @JsonProperty("folderId")
     public Long getFolderId() { return folder == null ? null : folder.getId(); }
     public void setFolder(Folder folder) { this.folder = folder; }
+
+    public FileStatus getStatus() { return status; }
+    public void setStatus(FileStatus status) { this.status = status; }
 }

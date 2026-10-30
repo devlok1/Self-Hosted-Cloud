@@ -8,9 +8,10 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true, // Listen on all network addresses (LAN access)
+    allowedHosts: true, // Allow Tailscale IPs (100.x.y.z) and MagicDNS (*.ts.net)
     proxy: {
       '/api': {
-        target: 'http://localhost:8081',
+        target: process.env.BACKEND_URL || (process.env.SERVER_PORT ? `http://localhost:${process.env.SERVER_PORT}` : 'http://localhost:8080'),
         changeOrigin: true,
         secure: false,
       },

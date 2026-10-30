@@ -6,9 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-homecloud}
       POSTGRES_USER: ${POSTGRES_USER:-homecloud}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_to_secure_password}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Error: POSTGRES_PASSWORD must be configured in .env}"
     volumes:
       - homecloud_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,9 +29,10 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-homecloud}
       DB_USERNAME: ${POSTGRES_USER:-homecloud}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_to_secure_password}
-      JWT_SECRET: ${JWT_SECRET:-TestSecretKeyForTestingJwtAuthentication1234567890}
+      DB_PASSWORD: "${POSTGRES_PASSWORD:?Error: POSTGRES_PASSWORD must be configured in .env}"
+      JWT_SECRET: "${JWT_SECRET:?Error: JWT_SECRET must be configured in .env}"
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*,http://192.168.*,http://192.168.*:*,http://10.*,http://10.*:*,http://172.*,http://172.*:*,http://100.*,http://100.*:*,https://100.*,https://100.*:*,http://*.ts.net,http://*.ts.net:*,https://*.ts.net,https://*.ts.net:*}
       SERVER_PORT: 8080
       SERVER_ADDRESS: 0.0.0.0
       STORAGE_LOCATION: /app/HomeCloudStorage

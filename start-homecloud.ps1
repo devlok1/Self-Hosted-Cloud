@@ -15,7 +15,8 @@ if (Test-Path $envFile) {
     }
 }
 
-$port = if ($env:SERVER_PORT) { $env:SERVER_PORT } else { "8081" }
+$port = if ($env:SERVER_PORT) { $env:SERVER_PORT } else { "8080" }
+$env:SERVER_PORT = $port
 $frontendPort = "3000"
 
 $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |

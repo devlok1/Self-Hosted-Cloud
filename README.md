@@ -45,19 +45,19 @@ Whenever you want to stop the servers:
 
 Both backend and frontend are backed by comprehensive, real automated test suites:
 
-- **Backend Tests (41 tests, 0 failures)**:
+- **Backend Tests (55 tests, 0 failures)**:
   ```powershell
   cd backend
   mvn test
   ```
-  Tests cover JWT generation/validation, password hashing & authentication, path sanitization, atomic upload staging, safe deletion rollback, breadcrumb resolution, and REST integration endpoints.
+  Tests cover JWT auth, password hashing, folder/file management, breadcrumb hierarchy, path traversal security, and the complete Phase 3 resumable transfer suite: chunk store & assembly, duplicate chunk idempotency, chunk/final checksum verification, session cancellation, status recovery, and quota guards.
 
-- **Frontend Tests (23 tests, 0 failures)**:
+- **Frontend Tests (30 tests, 0 failures)**:
   ```powershell
   cd frontend
   npm test
   ```
-  Tests cover byte formatting, date localization, file type categorization, authentication form state & validations, navigation breadcrumbs, empty state actions, and toolbar filtering.
+  Tests cover byte formatting, date localization, file type categorization, navigation breadcrumbs, empty state actions, toolbar filtering, browser SHA-256 calculation, and resumable chunked upload modal interactions.
 
 - **Frontend Production Build**:
   ```powershell
@@ -80,6 +80,12 @@ Both backend and frontend are backed by comprehensive, real automated test suite
 - Empty folder deletion safety guard
 - Live search filtering across files
 - Real-time storage meter (bytes used, file and folder count)
+- **Reliable Large-File Resumable Transfers**:
+  - Chunked uploads with per-chunk SHA-256 verification
+  - In-browser pause and resume controls
+  - Transient network retry with exponential backoff
+  - Survives browser refreshes and tab closures (server-side status recovery)
+  - Explicit cancellation with immediate disk cleanup
 
 ### Backend API
 - User registration and login
@@ -318,10 +324,39 @@ Requires JWT authentication. Returns current user details (`id`, `email`).
 
 ---
 
-## File API
+## File API & Resumable Large-File Transfers
 
 All file endpoints require a valid JWT header (`Authorization: Bearer <token>`).
 Responses use `FileResponse` DTOs (`id`, `filename`, `size`, `contentType`, `folderId`, `createdAt`, `updatedAt`), concealing internal server storage paths.
+
+### Resumable Chunked Transfer Endpoints (Phase 3)
+
+For large files or unreliable connections, use the persistent transfer session protocol (see [Architecture Guide](file:///c:/ARKSET/Github/Self-Hosted_cloud/docs/TRANSFERS_ARCHITECTURE.md)):
+
+1. **Initiate Transfer Session**:
+   `POST /api/files/transfers/initiate`
+   - Body: `{"filename": "video.mp4", "fileSize": 524288000, "chunkSize": 5242880, "folderId": 1, "contentType": "video/mp4", "expectedChecksum": "optional-sha256"}`
+   - Returns: `201 Created` with `uploadId`, `totalChunks`, `status: "INITIATED"`, and `expiresAt`.
+
+2. **Upload Chunk**:
+   `PUT /api/files/transfers/{uploadId}/chunks/{chunkNumber}`
+   - Form-data: `chunk` (binary data)
+   - Header: `X-Chunk-Checksum: <sha256-hex>`
+   - Idempotent: re-transmitting an existing valid chunk returns `200 OK` safely.
+
+3. **Query Status / Resume Discovery**:
+   `GET /api/files/transfers/{uploadId}/status`
+   - Returns: Current session state and list of confirmed `uploadedChunks: [0, 1, 2, ...]`.
+
+4. **Complete Transfer**:
+   `POST /api/files/transfers/{uploadId}/complete`
+   - Assembles chunks sequentially, verifies size and checksums outside database transactions, atomically relocates file, and records `File` entity.
+
+5. **Cancel Transfer**:
+   `DELETE /api/files/transfers/{uploadId}`
+   - Aborts transfer and deletes all temporary chunks from disk.
+
+### Single-Request Upload (Legacy / Small Files)
 
 ### Upload to root
 

@@ -58,3 +58,56 @@ export interface ApiError {
 export type ViewMode = 'grid' | 'list';
 export type SortField = 'name' | 'date' | 'size';
 export type SortOrder = 'asc' | 'desc';
+
+export type TransferStatus =
+  | 'INITIATED'
+  | 'UPLOADING'
+  | 'FINALIZING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'EXPIRED';
+
+export interface TransferSession {
+  uploadId: string;
+  filename: string;
+  fileSize: number;
+  chunkSize: number;
+  totalChunks: number;
+  folderId: number | null;
+  status: TransferStatus;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface InitiateTransferRequest {
+  filename: string;
+  fileSize: number;
+  chunkSize?: number;
+  folderId?: number | null;
+  contentType?: string;
+  expectedChecksum?: string;
+}
+
+export interface TransferChunkResponse {
+  uploadId: string;
+  chunkNumber: number;
+  chunkSize: number;
+  checksum: string;
+  uploadedChunksCount: number;
+  totalChunks: number;
+  status: TransferStatus;
+}
+
+export interface TransferStatusResponse {
+  uploadId: string;
+  filename: string;
+  fileSize: number;
+  chunkSize: number;
+  totalChunks: number;
+  uploadedChunksCount: number;
+  uploadedChunks: number[];
+  folderId: number | null;
+  status: TransferStatus;
+  expiresAt: string;
+}

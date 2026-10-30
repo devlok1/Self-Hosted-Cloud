@@ -111,3 +111,6 @@ logs/
 **/logs/
 *.log
 
+# Documentation directory
+docs/
+

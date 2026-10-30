@@ -7,6 +7,10 @@ import type {
   StorageStats,
   LoginResponse,
   ApiError,
+  TransferSession,
+  InitiateTransferRequest,
+  TransferChunkResponse,
+  TransferStatusResponse,
 } from '../types';
 
 
@@ -204,5 +208,62 @@ export const storageApi = {
   getStats: async (): Promise<StorageStats> => {
     const res = await api.get<StorageStats>('/api/storage/stats');
     return res.data;
+  },
+};
+
+export const transfersApi = {
+  initiate: async (req: InitiateTransferRequest): Promise<TransferSession> => {
+    const res = await api.post<TransferSession>('/api/files/transfers/initiate', req);
+    return res.data;
+  },
+
+  uploadChunk: async (
+    uploadId: string,
+    chunkNumber: number,
+    chunkBlob: Blob,
+    checksum?: string,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<TransferChunkResponse> => {
+    const formData = new FormData();
+    formData.append('chunk', chunkBlob, `chunk_${chunkNumber}.part`);
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'multipart/form-data',
+    };
+    if (checksum) {
+      headers['X-Chunk-Checksum'] = checksum;
+    }
+
+    const res = await api.put<TransferChunkResponse>(
+      `/api/files/transfers/${encodeURIComponent(uploadId)}/chunks/${chunkNumber}`,
+      formData,
+      {
+        headers,
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total && onProgress) {
+            onProgress(progressEvent.loaded, progressEvent.total);
+          }
+        },
+      }
+    );
+    return res.data;
+  },
+
+  getStatus: async (uploadId: string): Promise<TransferStatusResponse> => {
+    const res = await api.get<TransferStatusResponse>(
+      `/api/files/transfers/${encodeURIComponent(uploadId)}/status`
+    );
+    return res.data;
+  },
+
+  complete: async (uploadId: string): Promise<FileItem> => {
+    const res = await api.post<FileItem>(
+      `/api/files/transfers/${encodeURIComponent(uploadId)}/complete`
+    );
+    return res.data;
+  },
+
+  cancel: async (uploadId: string): Promise<void> => {
+    await api.delete(`/api/files/transfers/${encodeURIComponent(uploadId)}`);
   },
 };

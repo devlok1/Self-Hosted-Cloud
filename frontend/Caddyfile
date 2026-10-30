@@ -1,0 +1,23 @@
+:80 {
+    root * /srv
+    encode gzip zstd
+
+    # Support large chunked transfers without proxy-level truncation
+    request_body {
+        max_size 100GB
+    }
+
+    # Route backend API calls to the Spring Boot service
+    handle /api/* {
+        reverse_proxy {$BACKEND_URL:backend:8080} {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # SPA client-side routing
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
+}

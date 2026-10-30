@@ -114,3 +114,10 @@ logs/
 # Documentation directory
 docs/
 
+# Automated Backups & Restoration Temps
+backups/
+**/backups/
+restore_temp*/
+**/restore_temp*/
+homecloud_backup*
+

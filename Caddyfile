@@ -1,0 +1,44 @@
+# HomeCloud Production Caddy Configuration
+{
+    admin off
+}
+
+# Site Address: Defaults to :80 for LAN or can be set to domain/Tailscale FQDN
+{$SITE_ADDRESS::80} {
+    encode gzip zstd
+
+    # Security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Allow large-file uploads up to 100 GB without reverse-proxy cutoff
+    request_body {
+        max_size 100GB
+    }
+
+    # Reverse proxy API requests to the Spring Boot backend container
+    handle /api/* {
+        reverse_proxy backend:8080 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+
+            # Buffer streaming optimizations for high throughput
+            transport http {
+                read_buffer 16384
+                write_buffer 16384
+            }
+        }
+    }
+
+    # Serve React SPA static files from /srv
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

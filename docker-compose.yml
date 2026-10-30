@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17
+    image: postgres:17-alpine
     container_name: homecloud-postgres
     restart: unless-stopped
     environment:
@@ -8,9 +8,81 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-homecloud}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_to_secure_password}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - homecloud_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-homecloud} -d ${POSTGRES_DB:-homecloud}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - homecloud_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: homecloud-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-homecloud}
+      DB_USERNAME: ${POSTGRES_USER:-homecloud}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_to_secure_password}
+      JWT_SECRET: ${JWT_SECRET:-TestSecretKeyForTestingJwtAuthentication1234567890}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      SERVER_PORT: 8080
+      SERVER_ADDRESS: 0.0.0.0
+      STORAGE_LOCATION: /app/HomeCloudStorage
+    volumes:
+      - homecloud_storage_data:/app/HomeCloudStorage
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks:
+      - homecloud_network
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: homecloud-web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      BACKEND_URL: backend:8080
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - homecloud_network
 
 volumes:
   homecloud_postgres_data:
+    name: homecloud_postgres_data
+  homecloud_storage_data:
+    name: homecloud_storage_data
+  caddy_data:
+    name: homecloud_caddy_data
+  caddy_config:
+    name: homecloud_caddy_config
+
+networks:
+  homecloud_network:
+    name: homecloud_network
+    driver: bridge

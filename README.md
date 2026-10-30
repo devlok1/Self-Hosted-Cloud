@@ -10,34 +10,52 @@ HomeCloud is a self-hosted personal cloud storage application designed for runni
 
 ## Quick Start (One-Click Launch)
 
-### 1. Database Setup
-Choose one of the two options:
-- **Option A (Local PostgreSQL service)**: Run the setup script to create the user and database matching your `.env`:
-  ```powershell
-  .\setup-local-db.ps1
-  ```
-- **Option B (Docker PostgreSQL)**:
-  ```powershell
-  docker compose up -d
-  ```
+### 1. Launch Options
 
-### 2. Start Both Backend & Frontend
-Run the unified startup script:
+#### Option A: Production Multi-Container Docker Stack (Recommended)
+Launch the complete stack (PostgreSQL 17, Spring Boot Backend, and Caddy Reverse Proxy with React SPA):
 ```powershell
-.\start-homecloud.ps1
+docker compose up -d --build
 ```
-This opens the services in dedicated terminals and prints your direct access links:
+- **Web UI & API (via Caddy)**: `http://localhost` (or `http://<YOUR_LAN_IP>`)
+- **Health Check**: `http://localhost/api/health`
+- **Tailscale HTTPS**: Automatic valid certificates using Tailscale Serve (see [Tailscale Guide](docs/TAILSCALE_REMOTE_ACCESS_GUIDE.md)).
+
+#### Option B: Local Bare-Metal Development (Windows)
+1. Initialize local PostgreSQL database:
+   ```powershell
+   .\setup-local-db.ps1
+   ```
+2. Start both backend and frontend in dedicated terminals:
+   ```powershell
+   .\start-homecloud.ps1
+   ```
 - **Frontend Web UI**: `http://localhost:3000` (or `http://<YOUR_LAN_IP>:3000`)
 - **Backend API**: `http://localhost:8081` (or `http://<YOUR_LAN_IP>:8081`)
-- **Health Check**: `http://localhost:8081/api/health`
 
-### 3. Stop HomeCloud
-Whenever you want to stop the servers:
-- **Option A (Terminal)**: Press `Ctrl + C` in each running terminal window.
-- **Option B (One-Click Script)**: Run the shutdown script:
+### 2. Stop HomeCloud
+- **Docker Stack**: `docker compose down`
+- **Bare-Metal Script**: Run `.\stop-homecloud.ps1` or press `Ctrl + C` in each terminal.
+
+### 3. Automated Backups & Disaster Recovery
+- **Create Backup**:
   ```powershell
-  .\stop-homecloud.ps1
+  .\backup-homecloud.ps1       # Windows PowerShell
+  ./backup-homecloud.sh        # Linux / macOS
   ```
+  Produces a compressed archive containing a consistent PostgreSQL `database.sql` dump and all physical storage files.
+- **Restore from Backup**:
+  ```powershell
+  .\restore-homecloud.ps1 -BackupFile "backups\homecloud_backup_*.zip"
+  ./restore-homecloud.sh backups/homecloud_backup_*.tar.gz
+  ```
+  See the [Backup and Restoration Guide](docs/BACKUP_AND_RESTORE.md) for automated scheduling and server migration.
+
+### 4. Secure Remote Access (Tailscale)
+Access HomeCloud from anywhere in the world on your smartphone or remote laptop with zero port-forwarding:
+- **Tailscale Setup**: Install Tailscale on your host and run `tailscale serve --bg 80`.
+- **MagicDNS & HTTPS**: Connect directly to `https://<device-name>.<tailnet>.ts.net/` with valid end-to-end encryption.
+- See the complete [Tailscale Remote Access Guide](docs/TAILSCALE_REMOTE_ACCESS_GUIDE.md).
 
 ---
 

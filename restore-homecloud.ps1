@@ -70,7 +70,7 @@ try {
 
     if ($useDocker) {
         Write-Host "      Detected running Docker Postgres container. Restoring via container..." -ForegroundColor Gray
-        docker compose exec -T postgres psql -U $dbUser -d $dbName < $sqlDumpFile
+        Get-Content -Raw $sqlDumpFile | docker compose exec -T postgres psql -U $dbUser -d $dbName
     } else {
         if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
             throw "psql command not found in PATH and Docker container is not running."

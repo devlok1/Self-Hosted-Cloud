@@ -220,7 +220,7 @@ public class TransferService {
 
         List<Integer> uploadedChunks = uploadChunkRepository.findBySession_IdOrderByChunkNumberAsc(uploadId)
                 .stream()
-                .map(UploadChunk::getChunkNumber)
+                .map(chunk -> chunk.getChunkNumber())
                 .toList();
 
         return TransferStatusResponse.fromEntity(session, uploadedChunks);

@@ -25,20 +25,20 @@ $env:BACKEND_URL = "http://localhost:$backendPort"
 
 # Discover network addresses
 $lanIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-    Where-Object {
-        $_.IPAddress -notlike "127.*" -and
-        $_.IPAddress -notlike "169.254.*" -and
-        $_.IPAddress -notlike "100.*" -and
-        $_.PrefixOrigin -ne "WellKnown" -and
-        $_.InterfaceAlias -notmatch "VMware|Virtual|vEthernet|Loopback|Tailscale"
-    } |
-    Select-Object -First 1 -ExpandProperty IPAddress
+Where-Object {
+    $_.IPAddress -notlike "127.*" -and
+    $_.IPAddress -notlike "169.254.*" -and
+    $_.IPAddress -notlike "100.*" -and
+    $_.PrefixOrigin -ne "WellKnown" -and
+    $_.InterfaceAlias -notmatch "VMware|Virtual|vEthernet|Loopback|Tailscale"
+} |
+Select-Object -First 1 -ExpandProperty IPAddress
 
 $tailscaleIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-    Where-Object {
-        $_.IPAddress -like "100.*" -or $_.InterfaceAlias -match "Tailscale"
-    } |
-    Select-Object -First 1 -ExpandProperty IPAddress
+Where-Object {
+    $_.IPAddress -like "100.*" -or $_.InterfaceAlias -match "Tailscale"
+} |
+Select-Object -First 1 -ExpandProperty IPAddress
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "       HomeCloud - Self-Hosted Cloud Storage System       " -ForegroundColor White -BackgroundColor DarkBlue
@@ -47,14 +47,56 @@ Write-Host ""
 
 # 1. Dependency checks
 Write-Host "[Dependency Check]" -ForegroundColor Yellow
+#$javaOk = $false
+#try {
+#    $javaVer = java -version 2>&1 | Select-Object -First 1
+#    if ($javaVer) {
+#        Write-Host "  [OK] Java Runtime: $javaVer" -ForegroundColor Green
+#        $javaOk = $true
+#    }
+#} catch {
+#    Write-Host "  [FAIL] Java not found on PATH. Java 21+ is required." -ForegroundColor Red
+#}
+# Java dependency check
+#Write-Host "[Dependency Check]" -ForegroundColor Yellow
+
 $javaOk = $false
-try {
-    $javaVer = java -version 2>&1 | Select-Object -First 1
-    if ($javaVer) {
-        Write-Host "  [OK] Java Runtime: $javaVer" -ForegroundColor Green
-        $javaOk = $true
+
+$javaCommand = Get-Command java.exe -ErrorAction SilentlyContinue
+
+if ($javaCommand) {
+    $previousErrorPreference = $ErrorActionPreference
+
+    try {
+        # Java writes version information to stderr.
+        # Temporarily prevent that from triggering the catch block.
+        $ErrorActionPreference = "Continue"
+
+        $javaOutput = & $javaCommand.Source -version 2>&1 |
+        Out-String
+
+        $javaExitCode = $LASTEXITCODE
+
+        if ($javaExitCode -eq 0) {
+            $javaVersion = ($javaOutput -split "`r?`n" |
+                Where-Object { $_.Trim() -ne "" } |
+                Select-Object -First 1).Trim()
+
+            Write-Host "  [OK] Java Runtime: $javaVersion" -ForegroundColor Green
+            $javaOk = $true
+        }
+        else {
+            Write-Host "  [FAIL] Java executable found but version check failed." -ForegroundColor Red
+        }
     }
-} catch {
+    catch {
+        Write-Host "  [FAIL] Java check failed: $_" -ForegroundColor Red
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
+    }
+}
+else {
     Write-Host "  [FAIL] Java not found on PATH. Java 21+ is required." -ForegroundColor Red
 }
 
@@ -65,14 +107,16 @@ try {
         Write-Host "  [OK] Node.js Runtime: $nodeVer" -ForegroundColor Green
         $nodeOk = $true
     }
-} catch {
+}
+catch {
     Write-Host "  [FAIL] Node.js not found on PATH. Node 18+ is required." -ForegroundColor Red
 }
 
 $pgConn = Get-NetTCPConnection -LocalPort 5432 -State Listen -ErrorAction SilentlyContinue
 if ($pgConn) {
     Write-Host "  [OK] PostgreSQL listening on port 5432" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "  [WARN] PostgreSQL does not appear to be listening on port 5432. Ensure PostgreSQL service or Docker is running." -ForegroundColor Yellow
 }
 Write-Host ""
@@ -86,10 +130,12 @@ if (-not $OnlyFrontend) {
         if ($proc -and $proc.ProcessName -notmatch "java|javaw") {
             Write-Host "  [CONFLICT] Port $backendPort is currently occupied by unrelated process '$($proc.ProcessName)' (PID: $($proc.Id))!" -ForegroundColor Red
             Write-Host "             Tip: Change SERVER_PORT in .env (e.g. SERVER_PORT=8081) to avoid collision." -ForegroundColor Yellow
-        } else {
+        }
+        else {
             Write-Host "  [INFO] A process is already listening on backend port $backendPort ($($proc.ProcessName))." -ForegroundColor Gray
         }
-    } else {
+    }
+    else {
         Write-Host "  [OK] Backend port $backendPort is available" -ForegroundColor Green
     }
 }
@@ -99,7 +145,8 @@ if (-not $OnlyBackend) {
     if ($fConns) {
         $fProc = Get-Process -Id $fConns[0].OwningProcess -ErrorAction SilentlyContinue
         Write-Host "  [INFO] Frontend port $frontendPort is currently in use by '$($fProc.ProcessName)' (PID: $($fProc.Id))." -ForegroundColor Gray
-    } else {
+    }
+    else {
         Write-Host "  [OK] Frontend port $frontendPort is available" -ForegroundColor Green
     }
 }
@@ -116,7 +163,8 @@ if (-not $OnlyFrontend) {
         try {
             & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $migrateScript
             Write-Host "  [OK] Database schema and migrations verified" -ForegroundColor Green
-        } catch {
+        }
+        catch {
             Write-Host "  [WARN] Database migration check encountered an issue: $_" -ForegroundColor Yellow
         }
         Write-Host ""
@@ -154,12 +202,14 @@ if (-not $OnlyFrontend) {
                 $backendReady = $true
                 break
             }
-        } catch {
+        }
+        catch {
             Write-Host -NoNewline "."
         }
     }
     Write-Host ""
-} else {
+}
+else {
     $backendReady = $true
 }
 
@@ -176,12 +226,14 @@ if (-not $OnlyBackend) {
                 $frontendReady = $true
                 break
             }
-        } catch {
+        }
+        catch {
             Write-Host -NoNewline "."
         }
     }
     Write-Host ""
-} else {
+}
+else {
     $frontendReady = $true
 }
 
@@ -196,13 +248,15 @@ Write-Host "  Operating Mode       : $modeStr" -ForegroundColor White
 if ($backendReady) {
     Write-Host "  Backend Service      : [ONLINE]  http://localhost:$backendPort (0.0.0.0:$backendPort)" -ForegroundColor Green
     Write-Host "  Health Endpoint      : [200 OK]  http://localhost:$backendPort/api/health" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "  Backend Service      : [STARTING / PENDING]  Check the Spring Boot terminal window" -ForegroundColor Yellow
 }
 
 if ($frontendReady) {
     Write-Host "  Frontend Web UI      : [ONLINE]  http://localhost:$frontendPort (0.0.0.0:$frontendPort)" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "  Frontend Web UI      : [STARTING / PENDING]  Check the Vite terminal window" -ForegroundColor Yellow
 }
 

@@ -81,6 +81,17 @@ class CorsAndTailscaleIntegrationTest {
     }
 
     @Test
+    @DisplayName("CORS request from untrusted origin does not receive Access-Control-Allow-Origin header")
+    void corsRequest_untrustedOrigin_noAllowOriginHeader() throws Exception {
+        RegisterRequest request = new RegisterRequest("evil@example.com", "password123");
+        mockMvc.perform(post("/api/auth/register")
+                        .header(HttpHeaders.ORIGIN, "http://malicious-attacker.com")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
+    }
+
+    @Test
     @DisplayName("Registration from Tailscale IP origin succeeds and includes CORS headers")
     void register_tailscaleOrigin_success() throws Exception {
         RegisterRequest request = new RegisterRequest("tailscale.user@example.com", "securePassword123");

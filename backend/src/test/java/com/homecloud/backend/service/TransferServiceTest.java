@@ -215,4 +215,70 @@ class TransferServiceTest {
         assertEquals(2, response.getUploadedChunksCount());
         assertEquals(3, response.getTotalChunks());
     }
+
+    @Test
+    void testCompleteSessionDatabaseFailureCleansUpPhysicalFile() {
+        String uploadId = "test-session";
+        UploadSession session = new UploadSession(uploadId, testUser, null, "photo.jpg", "image/jpeg",
+                2000L, 1000L, 2, "validFinalSha256", LocalDateTime.now().plusHours(1));
+
+        UploadChunk chunk0 = new UploadChunk(session, 0, 1000L, "chk0");
+        UploadChunk chunk1 = new UploadChunk(session, 1, 1000L, "chk1");
+
+        when(uploadSessionRepository.findByIdAndOwner_Id(uploadId, 1L)).thenReturn(Optional.of(session));
+        when(uploadChunkRepository.findBySession_IdOrderByChunkNumberAsc(uploadId)).thenReturn(List.of(chunk0, chunk1));
+        when(transferStorageService.assembleChunks(1L, uploadId, 2, 2000L))
+                .thenReturn(new TransferStorageService.AssemblyResult(Paths.get("temp/assemble.tmp"), 2000L, "validFinalSha256"));
+        when(fileStorageService.getFilePath(eq(1L), anyString())).thenReturn(Paths.get("HomeCloudStorage/users/1/stored.jpg"));
+
+        // Simulate database insertion failure after physical move
+        when(fileRepository.save(any(File.class))).thenThrow(new RuntimeException("Simulated database failure during file save"));
+
+        assertThrows(RuntimeException.class, () -> transferService.completeSession(uploadId, testUser));
+
+        assertEquals(UploadSessionStatus.FAILED, session.getStatus());
+        // Verify physical file is pruned so it does not become an orphan
+        verify(fileStorageService).deleteFile(eq(1L), anyString());
+    }
+
+    @Test
+    void testReconcileInterruptedTransfersPrunesOrphanedPhysicalFileAndStaging() {
+        String uploadId = "crashed-session";
+        UploadSession session = new UploadSession(uploadId, testUser, null, "video.mp4", "video/mp4",
+                5000L, 1000L, 5, null, LocalDateTime.now().plusHours(1));
+        session.setStatus(UploadSessionStatus.FINALIZING);
+        session.setStoredFilename("uuid_video.mp4");
+        // session.getFile() is null (never reached DB file save before crash)
+
+        when(uploadSessionRepository.findByStatus(UploadSessionStatus.FINALIZING))
+                .thenReturn(List.of(session));
+
+        int recovered = transferService.reconcileInterruptedTransfers();
+
+        assertEquals(1, recovered);
+        assertEquals(UploadSessionStatus.FAILED, session.getStatus());
+        verify(fileStorageService).deleteFile(1L, "uuid_video.mp4");
+        verify(transferStorageService).deleteTransferDirectory(1L, uploadId);
+        verify(uploadSessionRepository).save(session);
+    }
+
+    @Test
+    void testReconcileInterruptedTransfersDoesNotTouchCompletedFiles() {
+        String uploadId = "completed-session";
+        UploadSession session = new UploadSession(uploadId, testUser, null, "video.mp4", "video/mp4",
+                5000L, 1000L, 5, null, LocalDateTime.now().plusHours(1));
+        session.setStatus(UploadSessionStatus.FINALIZING);
+        File completedFile = new File("video.mp4", "uuid_video.mp4", "/path", 5000L, "video/mp4", testUser);
+        session.setFile(completedFile);
+
+        when(uploadSessionRepository.findByStatus(UploadSessionStatus.FINALIZING))
+                .thenReturn(List.of(session));
+
+        int recovered = transferService.reconcileInterruptedTransfers();
+
+        assertEquals(0, recovered);
+        // Valid completed file is NEVER deleted
+        verify(fileStorageService, never()).deleteFile(anyLong(), anyString());
+        verify(transferStorageService, never()).deleteTransferDirectory(anyLong(), anyString());
+    }
 }

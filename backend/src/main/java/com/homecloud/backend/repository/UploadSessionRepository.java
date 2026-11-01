@@ -20,4 +20,5 @@ public interface UploadSessionRepository extends JpaRepository<UploadSession, St
     List<UploadSession> findByExpiresAtBeforeAndStatusNotIn(LocalDateTime dateTime, Collection<UploadSessionStatus> statuses);
 
     List<UploadSession> findByStatusAndUpdatedAtBefore(UploadSessionStatus status, LocalDateTime dateTime);
+    List<UploadSession> findByStatus(UploadSessionStatus status);
 }

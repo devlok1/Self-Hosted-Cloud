@@ -267,6 +267,8 @@ public class TransferService {
         }
 
         String storedFilename = UUID.randomUUID() + "_" + session.getFilename();
+        session.setStoredFilename(storedFilename);
+        uploadSessionRepository.save(session);
 
         // Move to final storage location
         try {
@@ -359,12 +361,41 @@ public class TransferService {
             try {
                 session.setStatus(UploadSessionStatus.FAILED);
                 uploadSessionRepository.save(session);
+                if (session.getFile() == null && session.getStoredFilename() != null) {
+                    fileStorageService.deleteFile(session.getOwner().getId(), session.getStoredFilename());
+                }
                 transferStorageService.deleteTransferDirectory(session.getOwner().getId(), session.getId());
                 log.warn("Marked stuck finalizing transfer session as FAILED: {}", session.getId());
             } catch (Exception e) {
                 log.warn("Failed to clean up stuck session {}: {}", session.getId(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * Reconciles transfer sessions interrupted by an abrupt backend crash or restart.
+     * Prunes orphaned physical files and staging directories for uncommitted files.
+     */
+    public int reconcileInterruptedTransfers() {
+        List<UploadSession> finalizingSessions = uploadSessionRepository.findByStatus(UploadSessionStatus.FINALIZING);
+        int recovered = 0;
+        for (UploadSession session : finalizingSessions) {
+            try {
+                if (session.getFile() == null) {
+                    if (session.getStoredFilename() != null) {
+                        fileStorageService.deleteFile(session.getOwner().getId(), session.getStoredFilename());
+                    }
+                    transferStorageService.deleteTransferDirectory(session.getOwner().getId(), session.getId());
+                    session.setStatus(UploadSessionStatus.FAILED);
+                    uploadSessionRepository.save(session);
+                    recovered++;
+                    log.info("Reconciled interrupted finalizing session {} and pruned orphaned artifacts", session.getId());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to reconcile interrupted session {}: {}", session.getId(), e.getMessage());
+            }
+        }
+        return recovered;
     }
 
     private UploadSession getActiveSession(String uploadId, Long userId) {

@@ -57,6 +57,9 @@ public class UploadSession {
     @Column(length = 128)
     private String actualChecksum;
 
+    @Column(length = 255)
+    private String storedFilename;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -147,6 +150,9 @@ public class UploadSession {
 
     public LocalDateTime getExpiresAt() { return expiresAt; }
     public void setExpiresAt(LocalDateTime expiresAt) { this.expiresAt = expiresAt; }
+
+    public String getStoredFilename() { return storedFilename; }
+    public void setStoredFilename(String storedFilename) { this.storedFilename = storedFilename; }
 
     public List<UploadChunk> getChunks() { return chunks; }
     public void setChunks(List<UploadChunk> chunks) { this.chunks = chunks; }

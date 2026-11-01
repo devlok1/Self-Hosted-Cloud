@@ -181,4 +181,38 @@ class FileServiceDeletionRecoveryTest {
         verify(fileStorageService).deleteFile(1L, "uuid_crash.docx");
         verify(fileRepository).delete(crashedFile);
     }
+
+    @Test
+    @DisplayName("Physical deletion succeeds followed by DB record delete failure: retry is idempotent and metadata is recoverable")
+    void deleteFile_physicalDeleteSucceedsThenDbDeleteFails_retryIsIdempotent() {
+        when(fileRepository.findByIdAndOwner_Id(100L, 1L)).thenReturn(Optional.of(activeFile));
+
+        // Simulate DB failure in Phase 3 when removing the record
+        doThrow(new RuntimeException("Simulated DB failure during entity deletion"))
+                .when(fileRepository).delete(activeFile);
+
+        RuntimeException thrown = assertThrows(RuntimeException.class, () ->
+                fileService.deleteFile(100L, 1L));
+
+        assertEquals("Simulated DB failure during entity deletion", thrown.getMessage());
+
+        // Verify physical file was deleted
+        verify(fileStorageService).deleteFile(1L, "uuid_stored_doc.pdf");
+        // Verify metadata remains preserved in PENDING_DELETION state
+        assertEquals(FileStatus.PENDING_DELETION, activeFile.getStatus());
+
+        // Simulate subsequent recovery retry via purgePendingDeletions()
+        when(fileRepository.findByStatus(FileStatus.PENDING_DELETION)).thenReturn(List.of(activeFile));
+        // Reset fileRepository mock to allow delete to succeed on retry
+        reset(fileRepository);
+        when(fileRepository.findByStatus(FileStatus.PENDING_DELETION)).thenReturn(List.of(activeFile));
+
+        int purged = fileService.purgePendingDeletions();
+
+        assertEquals(1, purged);
+        // Physical delete called again (idempotent no-op since file is already deleted)
+        verify(fileStorageService, times(2)).deleteFile(1L, "uuid_stored_doc.pdf");
+        // Record successfully purged from database
+        verify(fileRepository).delete(activeFile);
+    }
 }

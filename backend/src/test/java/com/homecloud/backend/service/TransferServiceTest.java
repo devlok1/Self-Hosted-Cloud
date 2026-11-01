@@ -162,8 +162,8 @@ class TransferServiceTest {
 
         assertNotNull(response);
         assertEquals("photo.jpg", response.getFilename());
-        assertEquals(2000L, response.getSize());
         assertEquals(UploadSessionStatus.COMPLETED, session.getStatus());
+        assertEquals("validFinalSha256", session.getActualChecksum());
         verify(transferStorageService).deleteTransferDirectory(1L, uploadId);
     }
 

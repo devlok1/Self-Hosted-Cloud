@@ -31,7 +31,7 @@ docker compose up -d --build
    .\start-homecloud.ps1
    ```
 - **Frontend Web UI**: `http://localhost:3000` (or `http://<YOUR_LAN_IP>:3000`)
-- **Backend API**: `http://localhost:8081` (or `http://<YOUR_LAN_IP>:8081`)
+- **Backend API**: `http://localhost:8080` (or `http://<YOUR_LAN_IP>:8080`)
 
 ### 2. Stop HomeCloud
 - **Docker Stack**: `docker compose down`
@@ -63,12 +63,12 @@ Access HomeCloud from anywhere in the world on your smartphone or remote laptop 
 
 Both backend and frontend are backed by comprehensive, real automated test suites:
 
-- **Backend Tests (55 tests, 0 failures)**:
+- **Backend Tests (75 tests, 0 failures)**:
   ```powershell
   cd backend
   mvn test
   ```
-  Tests cover JWT auth, password hashing, folder/file management, breadcrumb hierarchy, path traversal security, and the complete Phase 3 resumable transfer suite: chunk store & assembly, duplicate chunk idempotency, chunk/final checksum verification, session cancellation, status recovery, and quota guards.
+  Tests cover JWT auth, password hashing, folder/file management, breadcrumb hierarchy, path traversal security, Tailscale & LAN CORS origins, durable two-phase file deletion & recovery, production configuration startup validation, and the complete resumable transfer suite: chunk store & assembly, duplicate chunk idempotency, chunk/final SHA-256 verification, session cancellation, status recovery, and quota guards.
 
 - **Frontend Tests (30 tests, 0 failures)**:
   ```powershell
@@ -124,52 +124,63 @@ Both backend and frontend are backed by comprehensive, real automated test suite
 - LAN-ready server binding on `0.0.0.0:8081`
 
 
-## Project structure
+## Project Structure
 
 ```text
 HomeCloud/
-└── backend/
-    ├── src/main/java/com/homecloud/backend/
-    │   ├── controller/
-    │   │   ├── ApiExceptionHandler.java
-    │   │   ├── AuthController.java
-    │   │   ├── FileController.java
-    │   │   ├── FolderController.java
-    │   │   ├── HomeController.java
-    │   │   └── TestController.java
-    │   ├── dto/
-    │   ├── entity/
-    │   │   ├── File.java
-    │   │   ├── Folder.java
-    │   │   └── User.java
-    │   ├── repository/
-    │   │   ├── FileRepository.java
-    │   │   ├── FolderRepository.java
-    │   │   └── UserRepository.java
-    │   ├── security/
-    │   └── service/
-    │       ├── AuthService.java
-    │       ├── FileService.java
-    │       ├── FileStorageService.java
-    │       └── FolderService.java
-    ├── src/main/resources/application.properties
-    └── HomeCloudStorage/
+├── backend/
+│   ├── src/main/java/com/homecloud/backend/
+│   │   ├── config/
+│   │   │   └── ApplicationStartupValidator.java  # Production security startup validation
+│   │   ├── controller/
+│   │   │   ├── AuthController.java               # Register, login, profile
+│   │   │   ├── FileController.java               # Single upload, list, download, rename, move, delete
+│   │   │   ├── FolderController.java             # Folders and breadcrumb hierarchy
+│   │   │   ├── StorageController.java            # Aggregate storage statistics
+│   │   │   └── TransferController.java           # Resumable chunked upload protocol
+│   │   ├── dto/                                  # Clean response & request DTO shields
+│   │   ├── entity/
+│   │   │   ├── File.java                         # File entity with status tracking
+│   │   │   ├── FileStatus.java                   # ACTIVE, PENDING_DELETION lifecycle
+│   │   │   ├── Folder.java                       # Nested folder hierarchy
+│   │   │   ├── UploadChunk.java                  # Individual chunk metadata & checksums
+│   │   │   ├── UploadSession.java                # Resumable transfer session state
+│   │   │   ├── UploadSessionStatus.java          # INITIATED..COMPLETED lifecycle
+│   │   │   └── User.java                         # User entity
+│   │   ├── repository/                           # Spring Data JPA repositories
+│   │   ├── security/
+│   │   │   ├── JwtAuthenticationFilter.java      # Stateless Bearer token verification
+│   │   │   ├── JwtService.java                   # HMAC-SHA token generator and validator
+│   │   │   └── SecurityConfig.java               # Tailscale, LAN, and localhost CORS configuration
+│   │   └── service/
+│   │       ├── AuthService.java                  # User auth and credential hashing
+│   │       ├── FileService.java                  # Durable two-phase file deletion & management
+│   │       ├── FileStorageService.java           # User-isolated filesystem storage
+│   │       ├── FolderService.java                # Hierarchical folder service
+│   │       ├── TransferCleanupScheduler.java     # Scheduled purge of transfers & pending deletions
+│   │       ├── TransferService.java              # Resumable session orchestration & checksumming
+│   │       └── TransferStorageService.java       # Chunk staging, sequential assembly & atomic moves
+│   ├── src/main/resources/application.properties # Spring configuration with no default secrets
+│   └── Dockerfile                                # Multi-stage Alpine container build
+├── frontend/
+│   ├── src/
+│   │   ├── api/client.ts                         # Axios API client with resumable transfer calls
+│   │   ├── components/                           # React 19 UI (Navbar, Toolbar, UploadModal, etc.)
+│   │   ├── utils/                                # SHA-256 chunk hasher and byte formatters
+│   │   └── types/                                # TypeScript interfaces and session status types
+│   ├── vite.config.ts                            # Vite 6 config with Tailscale allowedHosts
+│   └── Dockerfile                                # React production build served via Caddy
+├── Caddyfile                                     # Reverse proxy configuration with 100 GB streaming
+└── docker-compose.yml                            # Production stack with internal database networking
 ```
 
-## PostgreSQL
+## PostgreSQL & Internal Docker Networking
 
-The supplied `docker-compose.yml` creates:
-
-```text
-Database: homecloud
-User:     homecloud
-Password: <set in your .env or docker-compose.override.yml>
-Port:     5432
-```
-
-If you are using a manually installed PostgreSQL server instead of Docker, make sure the `homecloud` role exists, has the correct password, and can connect to the `homecloud` database.
-
-The password in your `.env` (or environment variables) must match your PostgreSQL role password.
+In `docker-compose.yml`, PostgreSQL is kept strictly **internal** to the isolated Docker network (`homecloud_network`).
+- **No public host port exposure**: The default port `5432:5432` is not mapped to the host, protecting the database from LAN/WAN port scanners.
+- **Backend-to-Database communication**: The Spring Boot backend connects via internal DNS: `jdbc:postgresql://postgres:5432/homecloud`.
+- **Persistent storage**: Database files persist inside the named volume `homecloud_postgres_data`.
+- **Mandatory passwords**: Production runs require `POSTGRES_PASSWORD` in `.env`. The compose file rejects execution with an explicit error message if the secret is missing.
 
 ## Run
 
@@ -503,13 +514,69 @@ A folder must be empty (no subfolders, no files) before it can be deleted. This 
 12. Delete the file.
 13. Delete empty folders.
 
-## Important JWT troubleshooting
+## Important JWT & CORS Troubleshooting
 
-If the API returns `401 Invalid or expired JWT token`:
-
-- Login again and use the newest token.
+If the API returns `401 Unauthorized`:
+- Login again and verify the newest token is sent.
 - Ensure the header is exactly `Authorization: Bearer <token>`.
-- Do not send an old token after restarting/changing the JWT secret.
-- Do not put the login response JSON in the Authorization header; copy only the `token` value.
+- Do not send a token generated under a different or restarted `JWT_SECRET`.
 
-A `403` response generally means the request reached Spring Security but was not authorized. Check that the request has the correct JWT and that the endpoint is protected as expected.
+If the API returns `403 Forbidden`:
+- **Unauthenticated Registration / Preflight via Tailscale or LAN**: Verify your client's origin matches `CORS_ALLOWED_ORIGIN_PATTERNS`. Standard defaults automatically match `http://localhost:*`, `http://127.0.0.1:*`, RFC1918 private subnets (`192.168.*`, `10.*`, `172.*`), Tailscale CGNAT IPs (`100.*:*`), and Tailscale MagicDNS (`*.ts.net:*`).
+- **Untrusted Origins**: Untrusted origins are intentionally rejected by Spring Security CORS processor to protect user sessions and data.
+
+---
+
+## Architecture & Operational Details
+
+### 1. Reliable Two-Phase File Deletion Workflow
+File deletion avoids permanently deleting physical data before the database has safely recorded the deletion workflow:
+1. **Ownership Validation & Durable State Transition**:
+   - The file ownership is verified.
+   - Status transitions from `ACTIVE` to `PENDING_DELETION` and commits to the database.
+   - If a database failure occurs at this stage, the transaction rolls back and the physical file remains 100% intact.
+2. **Physical Deletion**:
+   - The physical file is safely removed from `HomeCloudStorage/users/{userId}/`.
+   - If a filesystem error occurs (e.g. disk locked or read-only), metadata is retained in the `PENDING_DELETION` state, allowing the user or admin to retry without orphaning files.
+3. **Database Purge**:
+   - Once physical deletion completes, the database record is removed.
+4. **Reconciliation & Recovery**:
+   - `FileService.purgePendingDeletions()` scans for any lingering `PENDING_DELETION` records (such as after an unexpected server crash) and cleanly reconciles them. This job runs automatically during scheduled maintenance.
+   - Files marked as `PENDING_DELETION` are excluded from user listings, searches, and storage quota calculations.
+
+### 2. Resumable Chunked Transfer Protocol (Large Files)
+HomeCloud includes an enterprise-grade resumable chunk transfer protocol for files up to 50 GB:
+- **Session Lifecycle**: `INITIATED` -> `UPLOADING` -> `FINALIZING` -> `COMPLETED` (or `CANCELLED`, `FAILED`, `EXPIRED`).
+- **Temporary Staging**: Chunks are uploaded to an isolated staging directory (`users/{userId}/transfers/{uploadId}/chunks/`) and never touch the main storage area until fully verified.
+- **Per-Chunk SHA-256**: Each chunk upload optionally verifies client-supplied SHA-256 (`X-Chunk-Checksum`).
+- **Idempotency**: Duplicate chunk uploads return `200 OK` without duplicating disk writes.
+- **Bounded Memory Assembly**: Finalization streams chunks directly into a single file outside database transactions, preventing out-of-memory errors.
+- **Atomic Move**: Once the full-file checksum matches `expectedChecksum`, the assembled file is atomically relocated into permanent storage.
+- **Automated Cleanup**: Stuck finalizing sessions (>30 min) and expired sessions (>24 hrs) are purged by `TransferCleanupScheduler`.
+
+### 3. Production Configuration & Security
+HomeCloud enforces strict configuration validation at startup via `ApplicationStartupValidator`:
+- **Mandatory Secrets**: In production (`!test`), the backend fails fast if `JWT_SECRET` is missing, shorter than 32 characters, or set to an insecure default.
+- **Database Password**: Rejects default passwords such as `change_me_to_secure_password`.
+- **Database Isolation**: PostgreSQL port `5432` is unmapped from the host in `docker-compose.yml`, restricting database traffic strictly to the internal bridge network.
+
+### 4. Configuration Reference (.env)
+
+| Variable | Description | Default | Required in Production |
+| :--- | :--- | :--- | :--- |
+| `POSTGRES_DB` | PostgreSQL database name | `homecloud` | No |
+| `POSTGRES_USER` | PostgreSQL username | `homecloud` | No |
+| `POSTGRES_PASSWORD` | PostgreSQL password | None | **Yes** |
+| `JWT_SECRET` | 32+ character HMAC-SHA secret key | None | **Yes** |
+| `JWT_EXPIRATION_MS` | JWT validity duration (milliseconds) | `86400000` (24h) | No |
+| `CORS_ALLOWED_ORIGIN_PATTERNS` | Comma-separated trusted origin patterns | Localhost, LAN, Tailscale | No |
+| `SITE_ADDRESS` | Caddy reverse proxy domain or port | `:80` | No (`*.ts.net` for Tailscale) |
+| `STORAGE_LOCATION` | Path to persistent storage root | `HomeCloudStorage` | No |
+| `MAX_TRANSFER_FILE_SIZE` | Maximum file transfer size (bytes) | `53687091200` (50 GB) | No |
+| `DEFAULT_CHUNK_SIZE` | Default transfer chunk size (bytes) | `5242880` (5 MB) | No |
+
+---
+
+## Known Limitations
+1. **Host-Direct Database Access in Docker**: Because PostgreSQL port `5432` is closed to the host for container isolation, external GUI clients (e.g. DBeaver) cannot connect directly to `localhost:5432` without either using `docker-compose.override.yml` or executing through `docker exec`.
+2. **Caddy HTTPS Requirements**: Automated Let's Encrypt TLS in Caddy requires a public domain or Tailscale MagicDNS address configured in `SITE_ADDRESS`. Local IP connections run over standard HTTP (:80).

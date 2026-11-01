@@ -278,7 +278,7 @@ public class TransferService {
         }
 
         // Persist File metadata in database
-        File savedFile = persistCompletedFile(session, storedFilename, user);
+        File savedFile = persistCompletedFile(session, storedFilename, user, assembly.checksum());
 
         // Clean up temporary chunks
         transferStorageService.deleteTransferDirectory(user.getId(), uploadId);
@@ -287,7 +287,7 @@ public class TransferService {
     }
 
     @Transactional
-    protected File persistCompletedFile(UploadSession session, String storedFilename, User user) {
+    protected File persistCompletedFile(UploadSession session, String storedFilename, User user, String computedChecksum) {
         Path path = fileStorageService.getFilePath(user.getId(), storedFilename);
         try {
             File file = new File(
@@ -302,7 +302,7 @@ public class TransferService {
             File savedFile = fileRepository.save(file);
 
             session.setStatus(UploadSessionStatus.COMPLETED);
-            session.setActualChecksum(session.getActualChecksum());
+            session.setActualChecksum(computedChecksum);
             session.setFile(savedFile);
             uploadSessionRepository.save(session);
 

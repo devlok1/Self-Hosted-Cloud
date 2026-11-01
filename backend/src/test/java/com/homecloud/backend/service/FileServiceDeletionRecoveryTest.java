@@ -140,4 +140,45 @@ class FileServiceDeletionRecoveryTest {
         verify(fileStorageService, never()).deleteFile(anyLong(), anyString());
         verify(fileRepository, never()).delete(any(File.class));
     }
+
+    @Test
+    @DisplayName("User attempting to access a file pending deletion throws ResourceNotFoundException")
+    void getUserFile_filePendingDeletion_throwsResourceNotFound() {
+        activeFile.setStatus(FileStatus.PENDING_DELETION);
+        when(fileRepository.findByIdAndOwner_Id(100L, 1L)).thenReturn(Optional.of(activeFile));
+
+        assertThrows(ResourceNotFoundException.class, () ->
+                fileService.getUserFile(100L, 1L));
+    }
+
+    @Test
+    @DisplayName("Successful file deletion records pending state, deletes physical data, and removes record")
+    void deleteFile_successfulDeletion_completesBothPhases() {
+        when(fileRepository.findByIdAndOwner_Id(100L, 1L)).thenReturn(Optional.of(activeFile));
+
+        fileService.deleteFile(100L, 1L);
+
+        assertEquals(FileStatus.PENDING_DELETION, activeFile.getStatus());
+        verify(fileRepository).save(activeFile);
+        verify(fileStorageService).deleteFile(1L, "uuid_stored_doc.pdf");
+        verify(fileRepository).delete(activeFile);
+    }
+
+    @Test
+    @DisplayName("Application restart during deletion: surviving pending deletions are safely reconciled")
+    void purgePendingDeletions_applicationRestartDuringDeletion() {
+        File crashedFile = new File("crash.docx", "uuid_crash.docx", "path", 2048L, "application/msword", owner);
+        ReflectionTestUtils.setField(crashedFile, "id", 200L);
+        crashedFile.setStatus(FileStatus.PENDING_DELETION);
+
+        // Re-instantiate service to simulate fresh application startup after crash
+        FileService freshAppFileService = new FileService(fileRepository, folderRepository, fileStorageService, folderService);
+        when(fileRepository.findByStatus(FileStatus.PENDING_DELETION)).thenReturn(List.of(crashedFile));
+
+        int recovered = freshAppFileService.purgePendingDeletions();
+
+        assertEquals(1, recovered);
+        verify(fileStorageService).deleteFile(1L, "uuid_crash.docx");
+        verify(fileRepository).delete(crashedFile);
+    }
 }

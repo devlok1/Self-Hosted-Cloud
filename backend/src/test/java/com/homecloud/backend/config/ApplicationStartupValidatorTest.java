@@ -96,13 +96,15 @@ class ApplicationStartupValidatorTest {
     void insecureDbPassword_throws() {
         when(environment.acceptsProfiles(any(Profiles.class))).thenReturn(false);
 
-        ApplicationStartupValidator validator = new ApplicationStartupValidator(
-                "SuperSecureProdJwtSecretWithMoreThan32CharsRequiredForSecurity!",
-                "change_me_to_secure_password",
-                environment
-        );
+        for (String insecurePass : new String[]{"change_me_to_secure_password", "Your_Secret", "your_super_secret_database_password_here", "password", "admin"}) {
+            ApplicationStartupValidator validator = new ApplicationStartupValidator(
+                    "SuperSecureProdJwtSecretWithMoreThan32CharsRequiredForSecurity!",
+                    insecurePass,
+                    environment
+            );
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> validator.run(null));
-        assertTrue(ex.getMessage().contains("Insecure database password detected"));
+            IllegalStateException ex = assertThrows(IllegalStateException.class, () -> validator.run(null));
+            assertTrue(ex.getMessage().contains("Insecure database password detected"), "Expected failure for: " + insecurePass);
+        }
     }
 }

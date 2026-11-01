@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -150,5 +151,77 @@ class CorsAndTailscaleIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://100.64.0.5:3000"))
                 .andExpect(jsonPath("$").isArray());
+    }
+
+    @Test
+    @DisplayName("CORS preflight from localhost:3000 returns 200 and allowed origin")
+    void corsPreflight_localhost_success() throws Exception {
+        mockMvc.perform(options("/api/auth/register")
+                        .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+    }
+
+    @Test
+    @DisplayName("Registration from localhost origin succeeds")
+    void register_localhostOrigin_success() throws Exception {
+        RegisterRequest request = new RegisterRequest("local.user@example.com", "securePassword123");
+
+        mockMvc.perform(post("/api/auth/register")
+                        .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
+                .andExpect(jsonPath("$.email", is("local.user@example.com")));
+    }
+
+    @Test
+    @DisplayName("CORS preflight from private LAN origin returns 200 and allowed origin")
+    void corsPreflight_lanOrigin_success() throws Exception {
+        mockMvc.perform(options("/api/auth/register")
+                        .header(HttpHeaders.ORIGIN, "http://192.168.1.150:3000")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://192.168.1.150:3000"))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+    }
+
+    @Test
+    @DisplayName("Registration from LAN origin succeeds")
+    void register_lanOrigin_success() throws Exception {
+        RegisterRequest request = new RegisterRequest("lan.user@example.com", "securePassword123");
+
+        mockMvc.perform(post("/api/auth/register")
+                        .header(HttpHeaders.ORIGIN, "http://192.168.1.150:3000")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://192.168.1.150:3000"))
+                .andExpect(jsonPath("$.email", is("lan.user@example.com")));
+    }
+
+    @Test
+    @DisplayName("SecurityConfig sanitizes trailing slashes, trims whitespace, and expands portless origins")
+    void securityConfig_sanitizesPatternsCorrectly() {
+        String raw = " http://100.115.82.45/ , https://my-server.ts.net/ , http://localhost:3000 ";
+        java.util.List<String> sanitized = com.homecloud.backend.security.SecurityConfig.parseAndSanitizeOriginPatterns(raw);
+
+        assertTrue(sanitized.contains("http://100.115.82.45"));
+        assertTrue(sanitized.contains("http://100.115.82.45:*"));
+        assertTrue(sanitized.contains("https://my-server.ts.net"));
+        assertTrue(sanitized.contains("https://my-server.ts.net:*"));
+        assertTrue(sanitized.contains("http://localhost:3000"));
+    }
+
+    @Test
+    @DisplayName("SecurityConfig prohibits unrestricted wildcard origin '*'")
+    void securityConfig_prohibitsWildcardAsterisk() {
+        assertThrows(IllegalArgumentException.class, () ->
+                com.homecloud.backend.security.SecurityConfig.parseAndSanitizeOriginPatterns("http://localhost, *"));
     }
 }

@@ -31,10 +31,41 @@ public class SecurityConfig {
 
     public SecurityConfig(
             JwtService jwtService,
-            @Value("${homecloud.security.cors.allowed-origin-patterns:http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*,http://192.168.*,http://192.168.*:*,http://10.*,http://10.*:*,http://172.*,http://172.*:*,http://100.*,http://100.*:*,https://100.*,https://100.*:*,http://*.ts.net,http://*.ts.net:*,https://*.ts.net,https://*.ts.net:*}")
-            List<String> allowedOriginPatterns) {
+            @Value("${homecloud.security.cors.allowed-origin-patterns:http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*,http://192.168.*,http://192.168.*:*,http://10.*,http://10.*:*,http://172.16.*,http://172.16.*:*,http://172.17.*,http://172.17.*:*,http://172.18.*,http://172.18.*:*,http://172.19.*,http://172.19.*:*,http://172.20.*,http://172.20.*:*,http://172.21.*,http://172.21.*:*,http://172.22.*,http://172.22.*:*,http://172.23.*,http://172.23.*:*,http://172.24.*,http://172.24.*:*,http://172.25.*,http://172.25.*:*,http://172.26.*,http://172.26.*:*,http://172.27.*,http://172.27.*:*,http://172.28.*,http://172.28.*:*,http://172.29.*,http://172.29.*:*,http://172.30.*,http://172.30.*:*,http://172.31.*,http://172.31.*:*}")
+            String rawOriginPatterns) {
         this.jwtService = jwtService;
-        this.allowedOriginPatterns = allowedOriginPatterns;
+        this.allowedOriginPatterns = parseAndSanitizeOriginPatterns(rawOriginPatterns);
+    }
+
+    public static List<String> parseAndSanitizeOriginPatterns(String rawPatterns) {
+        if (rawPatterns == null || rawPatterns.isBlank()) {
+            return List.of("http://localhost", "http://localhost:*", "http://127.0.0.1", "http://127.0.0.1:*");
+        }
+
+        List<String> result = new java.util.ArrayList<>();
+        String[] tokens = rawPatterns.split(",");
+        for (String token : tokens) {
+            String pattern = token.trim();
+            if (pattern.isEmpty()) {
+                continue;
+            }
+            while (pattern.endsWith("/")) {
+                pattern = pattern.substring(0, pattern.length() - 1).trim();
+            }
+            if (pattern.equals("*")) {
+                throw new IllegalArgumentException("Unrestricted CORS wildcard origin '*' is strictly prohibited");
+            }
+
+            result.add(pattern);
+
+            if (pattern.contains("://")) {
+                String afterScheme = pattern.substring(pattern.indexOf("://") + 3);
+                if (!afterScheme.contains(":") && !afterScheme.endsWith("*")) {
+                    result.add(pattern + ":*");
+                }
+            }
+        }
+        return result.stream().distinct().toList();
     }
 
     @Bean

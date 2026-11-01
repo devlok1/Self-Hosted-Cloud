@@ -17,13 +17,13 @@ public class ApplicationStartupValidator implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(ApplicationStartupValidator.class);
 
     private static final Set<String> INSECURE_PASSWORDS = Set.of(
-            "change_me", "change_me_to_secure_password", "password", "admin", "root", "123456", "Your_Secret"
-    );
+            "change_me", "change_me_to_secure_password", "password", "admin", "root", "123456", "Your_Secret",
+            "your_super_secret_database_password_here");
 
     private static final Set<String> INSECURE_JWT_SECRETS = Set.of(
             "change_me", "secret", "TestSecretKeyForTestingJwtAuthentication1234567890",
-            "your_secure_random_jwt_secret_min_32_characters_long_12345"
-    );
+            "your_secure_random_jwt_secret_min_32_characters_long_12345",
+            "HomeCloudSuperSecretKeyForJwtAuthentication123456");
 
     private final String jwtSecret;
     private final String dbPassword;
@@ -50,18 +50,22 @@ public class ApplicationStartupValidator implements ApplicationRunner {
             throw new IllegalStateException("FATAL: JWT_SECRET must be configured and cannot be empty.");
         }
         if (jwtSecret.trim().length() < 32) {
-            throw new IllegalStateException("FATAL: JWT_SECRET must be at least 32 characters long for cryptographic security.");
+            throw new IllegalStateException(
+                    "FATAL: JWT_SECRET must be at least 32 characters long for cryptographic security.");
         }
         if (INSECURE_JWT_SECRETS.contains(jwtSecret.trim())) {
-            throw new IllegalStateException("FATAL: Insecure default JWT_SECRET detected! You must specify a unique secret key.");
+            throw new IllegalStateException(
+                    "FATAL: Insecure default JWT_SECRET detected! You must specify a unique secret key.");
         }
 
         // 2. Validate Database Password
         if (dbPassword == null || dbPassword.isBlank()) {
-            throw new IllegalStateException("FATAL: Database password (DB_PASSWORD / POSTGRES_PASSWORD) must be configured and cannot be empty.");
+            throw new IllegalStateException(
+                    "FATAL: Database password (DB_PASSWORD / POSTGRES_PASSWORD) must be configured and cannot be empty.");
         }
         if (INSECURE_PASSWORDS.contains(dbPassword.trim())) {
-            throw new IllegalStateException("FATAL: Insecure database password detected! Change the default password in .env before running.");
+            throw new IllegalStateException(
+                    "FATAL: Insecure database password detected! Change the default password in .env before running.");
         }
 
         log.info("Startup configuration validated successfully (production security constraints satisfied).");

@@ -7,7 +7,9 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "files")
+@Table(name = "files", indexes = {
+        @Index(name = "idx_files_user_status", columnList = "user_id, status")
+})
 public class File {
 
     @Id
@@ -45,7 +47,7 @@ public class File {
     private Folder folder;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 50, columnDefinition = "varchar(50) default 'ACTIVE'")
     private FileStatus status = FileStatus.ACTIVE;
 
     public File() {}
@@ -73,6 +75,7 @@ public class File {
         LocalDateTime now = LocalDateTime.now();
         if (createdAt == null) createdAt = now;
         if (updatedAt == null) updatedAt = now;
+        if (status == null) status = FileStatus.ACTIVE;
     }
 
     @PreUpdate

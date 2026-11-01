@@ -79,6 +79,8 @@ homecloud_postgres_data/
 **/postgres_data/
 *.dump
 *.sql
+!setup-db.sql
+!migrations/*.sql
 !**/src/**/*.sql
 
 # IDE & Editor files

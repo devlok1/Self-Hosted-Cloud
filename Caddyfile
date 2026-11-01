@@ -4,7 +4,9 @@
 }
 
 # Site Address: Defaults to :80 for LAN or can be set to domain/Tailscale FQDN
-{$SITE_ADDRESS::80} {
+{ $SITE_ADDRESS::80 } 
+
+{
     encode gzip zstd
 
     # Security headers

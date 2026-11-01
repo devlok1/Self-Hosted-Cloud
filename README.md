@@ -26,12 +26,18 @@ docker compose up -d --build
    ```powershell
    .\setup-local-db.ps1
    ```
-2. Start both backend and frontend in dedicated terminals:
+2. Allow HomeCloud ports through Windows Firewall (Run PowerShell as Administrator once):
    ```powershell
-   .\start-homecloud.ps1
+   .\allow-homecloud-firewall.ps1
    ```
-- **Frontend Web UI**: `http://localhost:3000` (or `http://<YOUR_LAN_IP>:3000`)
-- **Backend API**: `http://localhost:8080` (or `http://<YOUR_LAN_IP>:8080`)
+3. Start both backend and frontend:
+   ```powershell
+   .\start-homecloud.ps1        # Starts backend and frontend with health check
+   .\start-homecloud-lan.ps1    # LAN / Tailscale mode with full diagnostic reporting
+   ```
+- **Frontend Web UI**: `http://localhost:3000` (LAN: `http://<YOUR_LAN_IP>:3000`, Tailscale: `http://<TAILSCALE_IP>:3000`)
+- **Backend API**: `http://localhost:8080` (or port `8081` if configured in `.env`)
+- **Health Check**: `http://localhost:8080/api/health`
 
 ### 2. Stop HomeCloud
 - **Docker Stack**: `docker compose down`

@@ -1,13 +1,31 @@
 # Run this script in Windows PowerShell AS ADMINISTRATOR on the HomeCloud host PC.
-# It allows the Spring Boot LAN API through the Windows Private network profile only.
+# It allows the HomeCloud Web UI and API through the Windows Firewall for LAN and Tailscale access.
 
-# Load port from .env if available, default to 8081, 8080
-$ports = @("8081", "8080")
-$ruleName = "HomeCloud Spring Boot API"
+# Load ports: Frontend (3000) and Backend (8080, 8081, or SERVER_PORT from .env)
+$envFile = Join-Path $PSScriptRoot ".env"
+$backendPort = "8080"
+if (Test-Path $envFile) {
+    $line = Get-Content $envFile | Where-Object { $_ -match '^\s*SERVER_PORT\s*=\s*(.*)$' } | Select-Object -First 1
+    if ($line) { $backendPort = $matches[1].Trim() }
+}
+
+$ports = @("3000", "8080", "8081")
+if ($backendPort -and $backendPort -notin $ports) {
+    $ports += $backendPort
+}
+
+$ruleName = "HomeCloud Web & API"
 
 $existing = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
 if ($existing) {
-    Write-Host "Firewall rule already exists: $ruleName"
+    Set-NetFirewallRule `
+        -DisplayName $ruleName `
+        -Direction Inbound `
+        -Protocol TCP `
+        -LocalPort $ports `
+        -Action Allow `
+        -Profile Any
+    Write-Host "Updated firewall rule: $ruleName for TCP ports $($ports -join ', ')" -ForegroundColor Green
 } else {
     New-NetFirewallRule `
         -DisplayName $ruleName `
@@ -15,9 +33,8 @@ if ($existing) {
         -Protocol TCP `
         -LocalPort $ports `
         -Action Allow `
-        -Profile Private
-
-    Write-Host "Created firewall rule: $ruleName for ports $($ports -join ', ')"
+        -Profile Any
+    Write-Host "Created firewall rule: $ruleName for TCP ports $($ports -join ', ')" -ForegroundColor Green
 }
 
-Write-Host "HomeCloud LAN ports $($ports -join ', ') are allowed on the Private network profile."
+Write-Host "HomeCloud ports $($ports -join ', ') are now allowed through Windows Firewall for LAN & Tailscale." -ForegroundColor Cyan

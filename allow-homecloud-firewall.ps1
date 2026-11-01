@@ -3,7 +3,7 @@
 
 # Load ports: Frontend (3000) and Backend (8080, 8081, or SERVER_PORT from .env)
 $envFile = Join-Path $PSScriptRoot ".env"
-$backendPort = "8080"
+$backendPort = @("8080", "8081")
 if (Test-Path $envFile) {
     $line = Get-Content $envFile | Where-Object { $_ -match '^\s*SERVER_PORT\s*=\s*(.*)$' } | Select-Object -First 1
     if ($line) { $backendPort = $matches[1].Trim() }
@@ -26,7 +26,8 @@ if ($existing) {
         -Action Allow `
         -Profile Any
     Write-Host "Updated firewall rule: $ruleName for TCP ports $($ports -join ', ')" -ForegroundColor Green
-} else {
+}
+else {
     New-NetFirewallRule `
         -DisplayName $ruleName `
         -Direction Inbound `

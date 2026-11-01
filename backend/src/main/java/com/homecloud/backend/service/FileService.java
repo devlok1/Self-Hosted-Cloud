@@ -6,6 +6,7 @@ import com.homecloud.backend.entity.FileStatus;
 import com.homecloud.backend.entity.Folder;
 import com.homecloud.backend.entity.User;
 import com.homecloud.backend.exception.BadRequestException;
+import com.homecloud.backend.exception.ConflictException;
 import com.homecloud.backend.exception.ResourceNotFoundException;
 import com.homecloud.backend.repository.FileRepository;
 import com.homecloud.backend.repository.FolderRepository;
@@ -19,8 +20,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class FileService {
@@ -122,12 +125,81 @@ public class FileService {
         return new StorageStatsResponse(usedBytes, fileCount, folderCount);
     }
 
-    @Transactional
     public File renameFile(Long fileId, Long userId, String newFilename) {
+        if (newFilename == null || newFilename.isBlank()) {
+            throw new BadRequestException("File name cannot be empty");
+        }
+        if (newFilename.contains("/") || newFilename.contains("\\") || newFilename.contains("\0")) {
+            throw new BadRequestException("File name contains invalid path traversal characters");
+        }
+
         String cleanName = fileStorageService.sanitizeFilename(newFilename);
-        File file = getUserFile(fileId, userId);
-        file.setFilename(cleanName);
-        return fileRepository.save(file);
+
+        // Serialize concurrent renames for the same file in this JVM
+        synchronized (("file-rename-lock-" + fileId).intern()) {
+            File file = getUserFile(fileId, userId);
+
+            // If the name is already identical, return existing file
+            if (file.getFilename().equals(cleanName)) {
+                return file;
+            }
+
+            // Check duplicate filename in the same folder / location
+            Folder folder = file.getFolder();
+            boolean duplicateExists = folder == null
+                    ? fileRepository.existsByFilenameIgnoreCaseAndOwner_IdAndFolderIsNullAndStatusAndIdNot(
+                            cleanName, userId, FileStatus.ACTIVE, file.getId())
+                    : fileRepository.existsByFilenameIgnoreCaseAndOwner_IdAndFolder_IdAndStatusAndIdNot(
+                            cleanName, userId, folder.getId(), FileStatus.ACTIVE, file.getId());
+
+            if (duplicateExists) {
+                throw new ConflictException("A file with this name already exists in this location");
+            }
+
+            String oldStoredFilename = file.getStoredFilename();
+            int underscoreIdx = oldStoredFilename != null ? oldStoredFilename.indexOf('_') : -1;
+            String uuidPrefix = (underscoreIdx > 0)
+                    ? oldStoredFilename.substring(0, underscoreIdx)
+                    : UUID.randomUUID().toString();
+            String newStoredFilename = uuidPrefix + "_" + cleanName;
+
+            // Phase 1: Rename the physical file on disk
+            Path newTargetPath = fileStorageService.renameStoredFile(userId, oldStoredFilename, newStoredFilename);
+
+            // Phase 2: Update the database metadata within a transaction
+            final File fileToUpdate = file;
+            File updatedFile;
+            try {
+                if (transactionTemplate != null) {
+                    updatedFile = transactionTemplate.execute(status -> {
+                        fileToUpdate.setFilename(cleanName);
+                        fileToUpdate.setStoredFilename(newStoredFilename);
+                        fileToUpdate.setStoragePath(newTargetPath.toString());
+                        fileToUpdate.setUpdatedAt(LocalDateTime.now());
+                        return fileRepository.saveAndFlush(fileToUpdate);
+                    });
+                } else {
+                    fileToUpdate.setFilename(cleanName);
+                    fileToUpdate.setStoredFilename(newStoredFilename);
+                    fileToUpdate.setStoragePath(newTargetPath.toString());
+                    fileToUpdate.setUpdatedAt(LocalDateTime.now());
+                    updatedFile = fileRepository.saveAndFlush(fileToUpdate);
+                }
+            } catch (Exception dbEx) {
+                // Phase 3: Compensation - If database update fails, revert physical file rename
+                log.error("Database update failed during rename of file ID {}. Reverting filesystem rename.", fileId, dbEx);
+                try {
+                    fileStorageService.renameStoredFile(userId, newStoredFilename, oldStoredFilename);
+                    log.info("Filesystem compensation successful for file ID {}: reverted to {}", fileId, oldStoredFilename);
+                } catch (Exception revertEx) {
+                    log.error("CRITICAL: Failed to compensate filesystem rename for file ID {} from {} back to {}: {}",
+                            fileId, newStoredFilename, oldStoredFilename, revertEx.getMessage());
+                }
+                throw dbEx;
+            }
+
+            return updatedFile;
+        }
     }
 
     @Transactional

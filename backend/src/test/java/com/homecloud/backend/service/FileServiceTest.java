@@ -96,17 +96,22 @@ class FileServiceTest {
     }
 
     @Test
-    @DisplayName("Rename file updates filename")
+    @DisplayName("Rename file updates filename and physical storage")
     void renameFile_success() {
-        File file = new File("old.txt", "uuid", "path", 100L, "text/plain", user);
+        File file = new File("old.txt", "uuid123_old.txt", "path/uuid123_old.txt", 100L, "text/plain", user);
         ReflectionTestUtils.setField(file, "id", 2L);
 
         when(fileStorageService.sanitizeFilename("new.txt")).thenReturn("new.txt");
         when(fileRepository.findByIdAndOwner_Id(2L, 1L)).thenReturn(Optional.of(file));
-        when(fileRepository.save(any(File.class))).thenAnswer(i -> i.getArgument(0));
+        when(fileStorageService.renameStoredFile(eq(1L), eq("uuid123_old.txt"), eq("uuid123_new.txt")))
+                .thenReturn(Path.of("path/uuid123_new.txt"));
+        when(fileRepository.saveAndFlush(any(File.class))).thenAnswer(i -> i.getArgument(0));
 
         File renamed = fileService.renameFile(2L, 1L, "new.txt");
         assertEquals("new.txt", renamed.getFilename());
+        assertEquals("uuid123_new.txt", renamed.getStoredFilename());
+        assertEquals(Path.of("path/uuid123_new.txt").toString(), renamed.getStoragePath());
+        verify(fileStorageService).renameStoredFile(1L, "uuid123_old.txt", "uuid123_new.txt");
     }
 
     @Test

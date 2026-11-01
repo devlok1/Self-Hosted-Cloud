@@ -145,6 +145,19 @@ export const App: React.FC = () => {
     }
   }, [user, currentFolderId, loadStats]);
 
+  const handleItemRenamed = useCallback(async () => {
+    loadFolderContent();
+    const trimmed = searchQuery.trim();
+    if (trimmed) {
+      try {
+        const results = await filesApi.search(trimmed);
+        setSearchResults(results);
+      } catch {
+        // silently fallback if search fails
+      }
+    }
+  }, [loadFolderContent, searchQuery]);
+
   useEffect(() => {
     if (user && !searchQuery) {
       loadFolderContent();
@@ -428,7 +441,7 @@ export const App: React.FC = () => {
         onClose={() => setRenameTarget(null)}
         item={renameTarget?.item || null}
         isFolder={renameTarget?.isFolder || false}
-        onRenamed={loadFolderContent}
+        onRenamed={handleItemRenamed}
       />
 
       <MoveModal

@@ -44,4 +44,8 @@ public interface FileRepository extends JpaRepository<File, Long> {
     long sumSizeByOwner_IdAndStatus(@Param("userId") Long userId, @Param("status") FileStatus status);
 
     List<File> findByStatus(FileStatus status);
+
+    boolean existsByFilenameIgnoreCaseAndOwner_IdAndFolderIsNullAndStatusAndIdNot(String filename, Long userId, FileStatus status, Long id);
+
+    boolean existsByFilenameIgnoreCaseAndOwner_IdAndFolder_IdAndStatusAndIdNot(String filename, Long userId, Long folderId, FileStatus status, Long id);
 }

@@ -56,6 +56,9 @@ public class FileStorageService {
         }
 
         String originalFilename = file.getOriginalFilename();
+        if (originalFilename != null) {
+            originalFilename = Paths.get(originalFilename).getFileName().toString();
+        }
         String cleanFilename = sanitizeFilename(originalFilename);
 
         Path userDir = getUserDirectory(userId);
@@ -101,7 +104,75 @@ public class FileStorageService {
             return legacyPath;
         }
 
+        // Resiliency fallback: Check if file was renamed on disk matching the UUID prefix
+        int underscoreIdx = storedFilename.indexOf('_');
+        if (underscoreIdx > 0) {
+            String prefix = storedFilename.substring(0, underscoreIdx + 1);
+            try (var stream = Files.list(userDir)) {
+                java.util.Optional<Path> match = stream
+                        .filter(p -> Files.isRegularFile(p) && p.getFileName().toString().startsWith(prefix))
+                        .findFirst();
+                if (match.isPresent()) {
+                    return match.get();
+                }
+            } catch (IOException ignored) {}
+        }
+
         return userPath;
+    }
+
+    public Path renameStoredFile(Long userId, String oldStoredFilename, String newStoredFilename) {
+        if (userId == null) {
+            throw new IllegalArgumentException("User ID must not be null");
+        }
+        if (oldStoredFilename == null || oldStoredFilename.isBlank() ||
+                newStoredFilename == null || newStoredFilename.isBlank()) {
+            throw new BadRequestException("Invalid stored filename");
+        }
+
+        Path sourcePath = getFilePath(userId, oldStoredFilename);
+        if (!Files.exists(sourcePath) || !Files.isRegularFile(sourcePath)) {
+            throw new StorageException("Source physical file not found on disk: " + oldStoredFilename);
+        }
+
+        Path userDir = getUserDirectory(userId);
+        Path targetPath = resolveSafe(userDir, newStoredFilename);
+
+        if (sourcePath.equals(targetPath)) {
+            return targetPath;
+        }
+
+        if (Files.exists(targetPath)) {
+            try {
+                if (Files.isSameFile(sourcePath, targetPath)) {
+                    // For case-only renames on Windows/NTFS, use a temporary file to avoid collision
+                    String tempFilename = UUID.randomUUID() + ".tmp";
+                    Path tempPath = resolveSafe(userDir, tempFilename);
+                    Files.move(sourcePath, tempPath, StandardCopyOption.REPLACE_EXISTING);
+                    Files.move(tempPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                    return targetPath;
+                }
+            } catch (IOException e) {
+                throw new StorageException("Failed to check if files are identical: " + targetPath, e);
+            }
+            throw new StorageException("Target physical file already exists: " + newStoredFilename);
+        }
+
+        try {
+            Files.move(sourcePath, targetPath, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            try {
+                Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException ex) {
+                log.error("Failed to rename physical file from {} to {}: {}", sourcePath, targetPath, ex.getMessage());
+                throw new StorageException("Failed to rename physical file", ex);
+            }
+        } catch (IOException e) {
+            log.error("Failed to rename physical file from {} to {}: {}", sourcePath, targetPath, e.getMessage());
+            throw new StorageException("Failed to rename physical file", e);
+        }
+
+        return targetPath;
     }
 
     public void deleteFile(Long userId, String storedFilename) {
@@ -134,6 +205,10 @@ public class FileStorageService {
     public String sanitizeFilename(String filename) {
         if (filename == null || filename.isBlank()) {
             throw new BadRequestException("File name cannot be empty");
+        }
+
+        if (filename.contains("/") || filename.contains("\\") || filename.contains("\0")) {
+            throw new BadRequestException("File name contains invalid path traversal characters");
         }
 
         String base = Paths.get(filename.trim()).getFileName().toString();

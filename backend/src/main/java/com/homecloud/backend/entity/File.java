@@ -85,11 +85,14 @@ public class File {
     public String getFilename() { return filename; }
     public void setFilename(String filename) { this.filename = filename; }
     public String getStoredFilename() { return storedFilename; }
+    public void setStoredFilename(String storedFilename) { this.storedFilename = storedFilename; }
     public String getStoragePath() { return storagePath; }
+    public void setStoragePath(String storagePath) { this.storagePath = storagePath; }
     public Long getSize() { return size; }
     public String getContentType() { return contentType; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     @JsonIgnore
     public User getOwner() { return owner; }
     @JsonIgnore

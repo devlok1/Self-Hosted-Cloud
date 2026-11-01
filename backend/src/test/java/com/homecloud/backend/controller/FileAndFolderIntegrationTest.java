@@ -172,6 +172,13 @@ class FileAndFolderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.filename", is("greeting.txt")));
 
+        // Download renamed file and verify content disposition matches updated filename
+        mockMvc.perform(get("/api/files/" + fileId + "/download")
+                        .header("Authorization", "Bearer " + userAToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", containsString("greeting.txt")))
+                .andExpect(content().string("Hello, HomeCloud!"));
+
         // Search files
         mockMvc.perform(get("/api/files/search")
                         .header("Authorization", "Bearer " + userAToken)
